@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#080d18">
+<title>AI News Live — Update Tiap Menit</title>
+<style>
+:root{color-scheme:dark;--bg:#080d18;--panel:#101a2b;--muted:#9aa9bf;--line:#22314a;--accent:#78a9ff;--green:#63d7a0}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 15% 0%,#142746 0,transparent 38%),var(--bg);color:#edf3ff;font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}
+header{max-width:1100px;margin:auto;padding:34px 20px 22px}.eyebrow{color:var(--green);font-size:.78rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+h1{font-size:clamp(2rem,6vw,3.5rem);line-height:1.05;margin:10px 0}.sub{color:var(--muted);margin:0}
+main{max-width:1100px;margin:auto;padding:0 20px 50px}.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 20px}
+button,.filter{border:1px solid var(--line);background:var(--panel);color:#eaf1ff;border-radius:12px;padding:10px 14px;font:inherit}
+button{cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#071326;font-weight:800}
+button:disabled{opacity:.6;cursor:wait}.status{color:var(--muted);font-size:.9rem;margin-left:auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:14px}
+article{background:linear-gradient(145deg,#142137,#0d1626);border:1px solid var(--line);border-radius:17px;padding:18px;min-height:190px;display:flex;flex-direction:column}
+.meta{display:flex;gap:8px;flex-wrap:wrap;color:var(--muted);font-size:.78rem;margin-bottom:10px}
+.tag{color:var(--green);font-weight:750}h2{font-size:1.08rem;line-height:1.35;margin:0 0 10px}h2 a{color:#edf3ff;text-decoration:none}h2 a:hover{color:var(--accent)}
+.desc{color:#b9c6d9;font-size:.91rem;margin:0 0 14px}.read{margin-top:auto;color:var(--accent);font-weight:700;text-decoration:none;font-size:.9rem}
+.empty{grid-column:1/-1;border:1px dashed var(--line);border-radius:16px;padding:30px;text-align:center;color:var(--muted)}
+footer{max-width:1100px;margin:auto;padding:0 20px 35px;color:#7f8da3;font-size:.8rem}
+@media(max-width:560px){header{padding-top:25px}.status{width:100%;margin-left:0}}
+</style>
+</head>
+<body>
+<header>
+<div class="eyebrow">● AI NEWS LIVE</div>
+<h1>Berita AI terbaru,<br>tanpa ketinggalan.</h1>
+<p class="sub">Kumpulan kabar kecerdasan buatan dari berbagai sumber. Diperbarui otomatis setiap 60 detik.</p>
+</header>
+<main>
+<div class="toolbar">
+<button class="primary" id="refresh">↻ Perbarui sekarang</button>
+<button class="filter" data-filter="all">Semua</button>
+<button class="filter" data-filter="id">Indonesia</button>
+<button class="filter" data-filter="global">Global</button>
+<span class="status" id="status">Menyiapkan berita…</span>
+</div>
+<section class="grid" id="news" aria-live="polite"><div class="empty">Sedang mengambil berita terbaru…</div></section>
+</main>
+<footer>Berita berasal dari RSS publik. Judul dan ringkasan tetap milik masing-masing penerbit. Jika satu sumber tidak tersedia, sumber lain tetap ditampilkan.</footer>
+<script>
+const feeds=[
+ {name:"Google News Indonesia",kind:"id",url:"https://news.google.com/rss/search?q=artificial+intelligence+OR+kecerdasan+buatan&hl=id&gl=ID&ceid=ID:id"},
+ {name:"Google News Global",kind:"global",url:"https://news.google.com/rss/search?q=artificial+intelligence+OR+OpenAI+OR+Google+AI&hl=en-US&gl=US&ceid=US:en"},
+ {name:"TechCrunch AI",kind:"global",url:"https://techcrunch.com/category/artificial-intelligence/feed/"},
+ {name:"The Verge AI",kind:"global",url:"https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"}
+];
+const proxy="https://api.allorigins.win/raw?url=";
+const newsEl=document.getElementById("news"),statusEl=document.getElementById("status"),refreshBtn=document.getElementById("refresh");
+let items=[],activeFilter="all",lastUpdated=null;
+function clean(s){const d=document.createElement("div");d.innerHTML=s||"";return (d.textContent||"").replace(/\s+/g," ").trim()}
+function safeDate(s){const d=new Date(s);return Number.isNaN(d.getTime())?"":d.toLocaleString("id-ID",{dateStyle:"medium",timeStyle:"short"})}
+async function getFeed(feed){
+ const res=await fetch(proxy+encodeURIComponent(feed.url),{cache:"no-store"});
+ if(!res.ok)throw new Error("HTTP "+res.status);
+ const xml=new DOMParser().parseFromString(await res.text(),"text/xml");
+ if(xml.querySelector("parsererror"))throw new Error("RSS tidak valid");
+ return [...xml.querySelectorAll("item, entry")].map(node=>{
+  const title=clean(node.querySelector("title")?.textContent);
+  const linkNode=node.querySelector("link");
+  const link=linkNode?.getAttribute("href")||linkNode?.textContent||"";
+  const date=node.querySelector("pubDate, published, updated")?.textContent||"";
+  const desc=clean(node.querySelector("description, summary, content")?.textContent);
+  return {title,link:link.trim(),date,desc,source:feed.name,kind:feed.kind};
+ }).filter(x=>x.title&&/^https?:\/\//i.test(x.link));
+}
+function render(){
+ const shown=items.filter(x=>activeFilter==="all"||x.kind===activeFilter).slice(0,25);
+ if(!shown.length){newsEl.innerHTML='<div class="empty">Belum ada berita untuk kategori ini. Coba perbarui lagi.</div>';return}
+ newsEl.innerHTML=shown.map(x=>'<article><div class="meta"><span class="tag">'+escapeHtml(x.source)+'</span><span>•</span><span>'+escapeHtml(safeDate(x.date)||"Waktu tidak tersedia")+'</span></div><h2><a href="'+escapeAttr(x.link)+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(x.title)+'</a></h2><p class="desc">'+escapeHtml(x.desc.slice(0,190)||"Buka artikel untuk membaca berita selengkapnya.")+'</p><a class="read" href="'+escapeAttr(x.link)+'" target="_blank" rel="noopener noreferrer">Baca berita ↗</a></article>').join("");
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function escapeAttr(s){return escapeHtml(s)}
+async function load(){
+ refreshBtn.disabled=true;statusEl.textContent="Memuat berita…";
+ const results=await Promise.allSettled(feeds.map(getFeed));
+ const merged=results.flatMap(r=>r.status==="fulfilled"?r.value:[]);
+ const unique=new Map();merged.forEach(x=>{const k=x.link;if(!unique.has(k))unique.set(k,x)});
+ items=[...unique.values()].sort((a,b)=>new Date(b.date||0)-new Date(a.date||0)).slice(0,25);
+ lastUpdated=new Date();
+ render();
+ const failed=results.filter(r=>r.status==="rejected").length;
+ statusEl.textContent=items.length+" berita · diperbarui "+lastUpdated.toLocaleTimeString("id-ID")+(failed?" · "+failed+" sumber gagal":"");
+ if(!items.length)newsEl.innerHTML='<div class="empty">Berita belum berhasil dimuat. Periksa koneksi internet lalu tekan Perbarui sekarang.</div>';
+ refreshBtn.disabled=false;
+}
+refreshBtn.addEventListener("click",load);
+document.querySelectorAll("[data-filter]").forEach(b=>b.addEventListener("click",()=>{activeFilter=b.dataset.filter;render()}));
+load();setInterval(load,60000);
+</script>
+</body>
+</html>
